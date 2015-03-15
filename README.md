@@ -1,5 +1,5 @@
 # httpscerts
-Simple library to generate server cert and keys for HTTPS support.
+Simple library to generate server certs and keys for HTTPS support.
 
 The code is modified from http://golang.org/src/crypto/tls/generate_cert.go.
 

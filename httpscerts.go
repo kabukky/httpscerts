@@ -18,6 +18,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"net"
@@ -70,7 +71,10 @@ func Check(certPath string, keyPath string) error {
 	return nil
 }
 
-func Generate(certPath string, keyPath string, host string) error {
+//generate cert and key byte arrays
+//these can then be used to populate the server configuration
+//in place of files on disk
+func GenerateArrays(host string) ([]byte, []byte, error) {
 	var priv interface{}
 	var err error
 	switch ecdsaCurve {
@@ -90,7 +94,7 @@ func Generate(certPath string, keyPath string, host string) error {
 	}
 	if err != nil {
 		log.Printf("failed to generate private key: %s", err)
-		return err
+		return nil, nil, err
 	}
 
 	var notBefore time.Time
@@ -100,7 +104,7 @@ func Generate(certPath string, keyPath string, host string) error {
 		notBefore, err = time.Parse("Jan 2 15:04:05 2006", validFrom)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to parse creation date: %s\n", err)
-			return err
+			return nil, nil, err
 		}
 	}
 
@@ -110,7 +114,7 @@ func Generate(certPath string, keyPath string, host string) error {
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
 		log.Printf("failed to generate serial number: %s", err)
-		return err
+		return nil, nil, err
 	}
 
 	template := x509.Certificate{
@@ -143,25 +147,33 @@ func Generate(certPath string, keyPath string, host string) error {
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(priv), priv)
 	if err != nil {
 		log.Printf("Failed to create certificate: %s", err)
+		return nil, nil, err
+	}
+
+	certArray := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyArray := pem.EncodeToMemory(pemBlockForKey(priv))
+
+	return certArray, keyArray, nil
+}
+
+func Generate(certPath, keyPath, host string) error {
+	certArray, keyArray, err := GenerateArrays(host)
+	if err != nil {
 		return err
 	}
 
-	certOut, err := os.Create(certPath)
+	err = ioutil.WriteFile(certPath, certArray, 0600)
 	if err != nil {
 		log.Printf("failed to open "+certPath+" for writing: %s", err)
-		return err
+		return err		
 	}
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-	certOut.Close()
 	log.Print("written cert.pem\n")
 
-	keyOut, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	err = ioutil.WriteFile(keyPath, keyArray, 0600)
 	if err != nil {
-		log.Print("failed to open "+keyPath+" for writing:", err)
-		return err
+		log.Printf("failed to open "+keyPath+" for writing: %s", err)
 	}
-	pem.Encode(keyOut, pemBlockForKey(priv))
-	keyOut.Close()
 	log.Print("written key.pem\n")
+
 	return nil
 }
